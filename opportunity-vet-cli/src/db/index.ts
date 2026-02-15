@@ -20,11 +20,11 @@ export function getDb(): Database.Database {
   return _db;
 }
 
-export function insertRun(packet: DecisionPacket, jsonPath: string, mdPath: string): void {
+export function insertRun(packet: DecisionPacket, jsonPath: string, mdPath: string, groupId?: string): void {
   const db = getDb();
   db.prepare(`
-    INSERT INTO runs (runId, createdAt, idea, niche, decision, totalScore, jsonPath, mdPath, tokenUsage, estimatedCost)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (runId, createdAt, idea, niche, decision, totalScore, jsonPath, mdPath, tokenUsage, estimatedCost, groupId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     packet.runId,
     packet.createdAt,
@@ -35,7 +35,8 @@ export function insertRun(packet: DecisionPacket, jsonPath: string, mdPath: stri
     jsonPath,
     mdPath,
     packet.meta.tokenUsage,
-    packet.meta.estimatedCost
+    packet.meta.estimatedCost,
+    groupId ?? null
   );
 
   const insertEvidence = db.prepare(`
@@ -61,12 +62,13 @@ export interface RunSummary {
   idea: string;
   decision: string;
   totalScore: number;
+  groupId?: string;
 }
 
 export function showHistory(limit: number): RunSummary[] {
   const db = getDb();
   return db
-    .prepare("SELECT runId, createdAt, idea, decision, totalScore FROM runs ORDER BY createdAt DESC LIMIT ?")
+    .prepare("SELECT runId, createdAt, idea, decision, totalScore, groupId FROM runs ORDER BY createdAt DESC LIMIT ?")
     .all(limit) as RunSummary[];
 }
 
@@ -83,4 +85,11 @@ export function showRun(runId: string): RunRecord | undefined {
     .prepare("SELECT runId, jsonPath, mdPath FROM runs WHERE runId = ? OR runId LIKE ?")
     .get(runId, `${runId}%`) as RunRecord | undefined;
   return row;
+}
+
+export function showGroup(groupId: string): RunSummary[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT runId, createdAt, idea, decision, totalScore, groupId FROM runs WHERE groupId = ? ORDER BY createdAt ASC")
+    .all(groupId) as RunSummary[];
 }

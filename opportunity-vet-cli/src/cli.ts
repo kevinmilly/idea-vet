@@ -72,6 +72,27 @@ program
   });
 
 program
+  .command("brainstorm")
+  .description("Generate and vet 3 business ideas from a pain point")
+  .requiredOption("--pain <string>", "The pain point to brainstorm solutions for")
+  .option("--niche <string>", "Target niche or industry")
+  .option("--customer <string>", "Target customer persona")
+  .option("--depth <number>", "Max critique iterations (1 or 2)", "1")
+  .option("--save <boolean>", "Save results to files and DB", "true")
+  .option("--verbose", "Show intermediate step output", false)
+  .action(async (options) => {
+    const { runBrainstorm } = await import("./pipeline/brainstorm.js");
+    await runBrainstorm({
+      painPoint: options.pain,
+      niche: options.niche,
+      customer: options.customer,
+      depth: parseInt(options.depth, 10),
+      save: options.save !== "false",
+      verbose: options.verbose,
+    });
+  });
+
+program
   .command("show <runId>")
   .description("Show a specific vetting run")
   .action(async (runId: string) => {

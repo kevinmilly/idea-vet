@@ -1,4 +1,5 @@
 import type { DecisionPacket } from "../openai/schemas/packet.zod.js";
+import type { Idea } from "../openai/schemas/ideator.zod.js";
 
 export function generateReport(packet: DecisionPacket): string {
   const { input, rubric, evidence, competitors, analysis, warnings, meta } = packet;
@@ -124,6 +125,102 @@ export function generateReport(packet: DecisionPacket): string {
     lines.push(`${i + 1}. ${analysis.nextTests[i]}`);
   }
   lines.push("");
+
+  return lines.join("\n");
+}
+
+export function generateBrainstormReport(
+  painPoint: string,
+  ideas: Idea[],
+  packets: DecisionPacket[],
+  reportPaths: string[]
+): string {
+  const lines: string[] = [];
+
+  lines.push(`# Brainstorm Report: ${painPoint}`);
+  lines.push("");
+  lines.push(`**Date:** ${new Date().toISOString().slice(0, 10)}`);
+  lines.push(`**Ideas vetted:** ${packets.length}`);
+  lines.push("");
+
+  // Rank by total score descending
+  const ranked = packets
+    .map((p, i) => ({ packet: p, idea: ideas[i], index: i }))
+    .sort((a, b) => b.packet.rubric.total - a.packet.rubric.total);
+
+  // Summary ranking table
+  lines.push("## Ranking");
+  lines.push("");
+  lines.push("| Rank | Idea | Decision | Score | Top Wedge |");
+  lines.push("|------|------|----------|-------|-----------|");
+  for (let r = 0; r < ranked.length; r++) {
+    const { packet, idea } = ranked[r];
+    const topWedge = packet.analysis.wedgeOptions[0]?.wedge ?? "—";
+    lines.push(`| ${r + 1} | ${idea.name} | ${packet.rubric.decision} | ${packet.rubric.total}/40 | ${topWedge} |`);
+  }
+  lines.push("");
+
+  // Side-by-side rubric comparison
+  lines.push("## Rubric Comparison");
+  lines.push("");
+  const header = ["Dimension", ...ranked.map((r) => r.idea.name)];
+  lines.push(`| ${header.join(" | ")} |`);
+  lines.push(`|${header.map(() => "---").join("|")}|`);
+
+  const dims: { label: string; key: keyof DecisionPacket["rubric"] }[] = [
+    { label: "Pain Intensity", key: "painIntensity" },
+    { label: "Frequency", key: "frequency" },
+    { label: "Buyer Clarity", key: "buyerClarity" },
+    { label: "Budget Signal", key: "budgetSignal" },
+    { label: "Switching Cost", key: "switchingCost" },
+    { label: "Competition", key: "competition" },
+    { label: "Distribution", key: "distributionFeasibility" },
+    { label: "Evidence", key: "evidenceStrength" },
+  ];
+
+  for (const dim of dims) {
+    const scores = ranked.map((r) => `${r.packet.rubric[dim.key]}/5`);
+    lines.push(`| ${dim.label} | ${scores.join(" | ")} |`);
+  }
+  const totals = ranked.map((r) => `**${r.packet.rubric.total}/40**`);
+  lines.push(`| **Total** | ${totals.join(" | ")} |`);
+  lines.push("");
+
+  // Idea details
+  lines.push("## Idea Details");
+  lines.push("");
+  for (let r = 0; r < ranked.length; r++) {
+    const { packet, idea, index } = ranked[r];
+    lines.push(`### ${r + 1}. ${idea.name}`);
+    lines.push("");
+    lines.push(`> ${idea.description}`);
+    lines.push("");
+    lines.push(`- **Target Customer:** ${idea.targetCustomer}`);
+    lines.push(`- **Revenue Model:** ${idea.revenueModel}`);
+    lines.push(`- **Why ≤10 hrs/week:** ${idea.whyLowTime}`);
+    lines.push(`- **Decision:** ${packet.rubric.decision} (${packet.rubric.total}/40)`);
+    if (reportPaths[index]) {
+      lines.push(`- **Full Report:** [${packet.runId}.md](${reportPaths[index]})`);
+    }
+    lines.push("");
+
+    // Top wedge
+    if (packet.analysis.wedgeOptions.length > 0) {
+      const w = packet.analysis.wedgeOptions[0];
+      lines.push(`**Top Wedge:** ${w.wedge}`);
+      lines.push(`  ${w.whyWorks}`);
+      lines.push("");
+    }
+
+    // Key risks
+    if (packet.analysis.premortem.length > 0) {
+      lines.push("**Key Risks:**");
+      for (const risk of packet.analysis.premortem.slice(0, 3)) {
+        lines.push(`- ${risk}`);
+      }
+      lines.push("");
+    }
+  }
 
   return lines.join("\n");
 }

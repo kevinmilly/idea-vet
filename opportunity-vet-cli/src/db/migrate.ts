@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 const SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS competitors (
 );
 `;
 
+const MIGRATION_V2 = `
+ALTER TABLE runs ADD COLUMN groupId TEXT;
+`;
+
 export function migrate(db: Database.Database): void {
   const currentVersion = getVersion(db);
 
@@ -51,6 +55,11 @@ export function migrate(db: Database.Database): void {
   if (currentVersion < 1) {
     db.exec(SCHEMA_V1);
     setVersion(db, 1);
+  }
+
+  if (currentVersion < 2) {
+    db.exec(MIGRATION_V2);
+    setVersion(db, 2);
   }
 }
 

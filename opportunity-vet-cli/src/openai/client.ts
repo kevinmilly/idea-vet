@@ -11,6 +11,8 @@ import type { AnalystResult } from "./schemas/analyst.zod.js";
 import { AnalystResultSchema } from "./schemas/analyst.zod.js";
 import type { SkepticResult } from "./schemas/skeptic.zod.js";
 import { SkepticResultSchema } from "./schemas/skeptic.zod.js";
+import type { IdeatorResult } from "./schemas/ideator.zod.js";
+import { IdeatorResultSchema } from "./schemas/ideator.zod.js";
 import type { ZodSchema } from "zod";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -294,4 +296,44 @@ ${refereePrompt}`;
   });
 
   return safeJsonParse<Record<string, unknown>>(raw);
+}
+
+export interface IdeatorInput {
+  painPoint: string;
+  niche?: string;
+  customer?: string;
+}
+
+export async function runIdeator(input: IdeatorInput): Promise<IdeatorResult> {
+  const ideatorPrompt = loadPrompt("ideator");
+
+  const userPrompt = `Pain point: ${input.painPoint}
+${input.niche ? `Niche: ${input.niche}` : ""}
+${input.customer ? `Customer: ${input.customer}` : ""}
+
+First, research this pain point to understand its scope, who experiences it, and what solutions (if any) already exist. Then generate 3 distinct business ideas that address it.
+
+${ideatorPrompt}`;
+
+  // Phase 1: Research the pain point with web search
+  const researchResults = await callOpenAI({
+    systemPrompt: "You are a market researcher. Search the web to understand this pain point: who experiences it, how severe it is, what solutions exist, and what gaps remain. Be thorough and factual.",
+    userPrompt: `Research this pain point thoroughly: "${input.painPoint}"${input.niche ? ` in the ${input.niche} space` : ""}${input.customer ? ` experienced by ${input.customer}` : ""}`,
+    useWebSearch: true,
+  });
+
+  // Phase 2: Generate ideas based on research
+  const phase2Prompt = `Here is research on the pain point "${input.painPoint}":
+
+${researchResults}
+
+Based on this research, generate 3 distinct business ideas that solve this pain point. Each must be operable in ≤10 hours/week.
+
+${ideatorPrompt}`;
+
+  return callAndValidate(
+    "You are a business idea generator. Create exactly 3 distinct, viable business ideas based on the research provided. Output valid JSON only.",
+    phase2Prompt,
+    IdeatorResultSchema
+  );
 }
