@@ -314,25 +314,15 @@ export async function runPipeline(options: PipelineOptions): Promise<void> {
     if (options.save) {
       fs.ensureDirSync(config.outputDir);
 
-      const jsonPath = path.join(config.outputDir, `${validated.runId}.json`);
-      const mdPath = path.join(config.outputDir, `${validated.runId}.md`);
-      const logPath = path.join(config.outputDir, `${validated.runId}.log.json`);
-
-      fs.writeJsonSync(jsonPath, validated, { spaces: 2 });
+      const txtPath = path.join(config.outputDir, `${validated.runId}.txt`);
 
       const report = generateReport(validated);
-      fs.writeFileSync(mdPath, report, "utf-8");
-
-      if (debugLog) {
-        fs.writeJsonSync(logPath, debugLog, { spaces: 2 });
-      }
+      fs.writeFileSync(txtPath, report, "utf-8");
 
       // Save to DB
-      insertRun(validated, jsonPath, mdPath, options.groupId);
+      insertRun(validated, txtPath, txtPath, options.groupId);
 
-      console.log(`\nReport saved: ${mdPath}`);
-      console.log(`JSON saved:   ${jsonPath}`);
-      console.log(`Debug log:    ${logPath}`);
+      console.log(`\nReport saved: ${txtPath}`);
     } else {
       console.log("\n" + generateReport(validated));
     }

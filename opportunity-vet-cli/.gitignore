@@ -3,3 +3,4 @@ dist/
 .data/
 reports/
 .env
+.env.*

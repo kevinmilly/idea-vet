@@ -13,7 +13,10 @@ import type { SkepticResult } from "./schemas/skeptic.zod.js";
 import { SkepticResultSchema } from "./schemas/skeptic.zod.js";
 import type { IdeatorResult } from "./schemas/ideator.zod.js";
 import { IdeatorResultSchema } from "./schemas/ideator.zod.js";
+import type { SalvageResult } from "./schemas/salvage.zod.js";
+import { SalvageResultSchema } from "./schemas/salvage.zod.js";
 import type { ZodSchema } from "zod";
+import type { DecisionPacket } from "./schemas/packet.zod.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Resolve project root: works from both src/ (dev) and dist/ (prod)
@@ -335,5 +338,60 @@ ${ideatorPrompt}`;
     "You are a business idea generator. Create exactly 3 distinct, viable business ideas based on the research provided. Output valid JSON only.",
     phase2Prompt,
     IdeatorResultSchema
+  );
+}
+
+export interface SalvageIdeaPacket {
+  ideaName: string;
+  ideaDescription: string;
+  rubricScores: DecisionPacket["rubric"];
+  noGoReasons: string[];
+  wedgeOptions: DecisionPacket["analysis"]["wedgeOptions"];
+  premortem: string[];
+  competitors: string[];
+}
+
+export interface SalvageInput {
+  painPoint: string;
+  ideas: SalvageIdeaPacket[];
+}
+
+export async function runSalvage(input: SalvageInput): Promise<SalvageResult> {
+  const salvagePrompt = loadPrompt("salvage");
+
+  const ideaSummaries = input.ideas.map((idea, i) => {
+    const dims = [
+      `painIntensity: ${idea.rubricScores.painIntensity}/5`,
+      `frequency: ${idea.rubricScores.frequency}/5`,
+      `buyerClarity: ${idea.rubricScores.buyerClarity}/5`,
+      `budgetSignal: ${idea.rubricScores.budgetSignal}/5`,
+      `switchingCost: ${idea.rubricScores.switchingCost}/5`,
+      `competition: ${idea.rubricScores.competition}/5`,
+      `distributionFeasibility: ${idea.rubricScores.distributionFeasibility}/5`,
+      `evidenceStrength: ${idea.rubricScores.evidenceStrength}/5`,
+    ].join(", ");
+
+    return `--- Idea ${i + 1}: ${idea.ideaName} ---
+Description: ${idea.ideaDescription}
+Scores: ${dims} | Total: ${idea.rubricScores.total}/40
+Decision: ${idea.rubricScores.decision}
+NO_GO Reasons: ${idea.noGoReasons.join("; ")}
+Top Wedges: ${idea.wedgeOptions.map(w => w.wedge).join("; ") || "none"}
+Key Risks: ${idea.premortem.slice(0, 3).join("; ")}
+Competitors: ${idea.competitors.slice(0, 5).join("; ")}`;
+  }).join("\n\n");
+
+  const userPrompt = `Pain point: ${input.painPoint}
+
+All 3 ideas received NO_GO. Here are their full assessments:
+
+${ideaSummaries}
+
+${salvagePrompt}`;
+
+  return callAndValidate(
+    "You are a pivot strategist. All ideas failed vetting. Find the most salvageable elements and generate concrete pivots. Output valid JSON only.",
+    userPrompt,
+    SalvageResultSchema
   );
 }

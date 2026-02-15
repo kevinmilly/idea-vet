@@ -1,5 +1,6 @@
 import type { DecisionPacket } from "../openai/schemas/packet.zod.js";
 import type { Idea } from "../openai/schemas/ideator.zod.js";
+import type { SalvageResult } from "../openai/schemas/salvage.zod.js";
 
 export function generateReport(packet: DecisionPacket): string {
   const { input, rubric, evidence, competitors, analysis, warnings, meta } = packet;
@@ -133,7 +134,8 @@ export function generateBrainstormReport(
   painPoint: string,
   ideas: Idea[],
   packets: DecisionPacket[],
-  reportPaths: string[]
+  reportPaths: string[],
+  salvageResult?: SalvageResult
 ): string {
   const lines: string[] = [];
 
@@ -221,6 +223,119 @@ export function generateBrainstormReport(
       lines.push("");
     }
   }
+
+  // Salvage section (only when all ideas are NO_GO)
+  if (salvageResult) {
+    lines.push(generateSalvageReportSection(salvageResult, packets));
+  }
+
+  return lines.join("\n");
+}
+
+function generateSalvageReportSection(
+  salvage: SalvageResult,
+  packets: DecisionPacket[]
+): string {
+  const lines: string[] = [];
+
+  lines.push("---");
+  lines.push("");
+  lines.push("## Pivot Salvage");
+  lines.push("");
+  lines.push("All ideas received NO_GO. The salvager analyzed failure patterns and generated pivots.");
+  lines.push("");
+
+  // Source analysis
+  lines.push("### Source Analysis");
+  lines.push("");
+  lines.push(salvage.sourceAnalysis);
+  lines.push("");
+
+  // Build a lookup for original scores by idea name
+  const originalScores = new Map<string, DecisionPacket["rubric"]>();
+  for (const p of packets) {
+    // Extract idea name from input (format: "Name: Description")
+    const name = p.input.idea.split(":")[0].trim();
+    originalScores.set(name, p.rubric);
+  }
+
+  // Each pivot
+  for (let i = 0; i < salvage.pivots.length; i++) {
+    const pivot = salvage.pivots[i];
+    const isRecommended = i === salvage.recommendation.pivotIndex;
+    const tag = isRecommended ? " (RECOMMENDED)" : "";
+
+    lines.push(`### Pivot ${i + 1}: ${pivot.oneLiner}${tag}`);
+    lines.push("");
+    lines.push(`**Source idea:** ${pivot.sourceIdeaName}`);
+    lines.push(`**NOT building:** ${pivot.notBuilding}`);
+    lines.push("");
+
+    // Constraint mapping table
+    lines.push("**Constraint Mapping:**");
+    lines.push("");
+    lines.push("| NO_GO Reason | How Pivot Addresses |");
+    lines.push("|---|---|");
+    for (const cm of pivot.constraintMapping) {
+      lines.push(`| ${cm.noGoReason} | ${cm.howPivotAddresses} |`);
+    }
+    lines.push("");
+
+    // Rubric adjustments table
+    const orig = originalScores.get(pivot.sourceIdeaName);
+    lines.push("**Rubric Adjustments:**");
+    lines.push("");
+    lines.push("| Dimension | Original | Delta | Estimated |");
+    lines.push("|---|---|---|---|");
+
+    const dims: { label: string; key: keyof typeof pivot.rubricAdjustments }[] = [
+      { label: "Pain Intensity", key: "painIntensity" },
+      { label: "Frequency", key: "frequency" },
+      { label: "Buyer Clarity", key: "buyerClarity" },
+      { label: "Budget Signal", key: "budgetSignal" },
+      { label: "Switching Cost", key: "switchingCost" },
+      { label: "Competition", key: "competition" },
+      { label: "Distribution", key: "distributionFeasibility" },
+    ];
+
+    for (const dim of dims) {
+      const origVal = orig ? orig[dim.key] : "?";
+      const delta = pivot.rubricAdjustments[dim.key];
+      const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+      const estimated = orig ? Math.max(0, Math.min(5, (orig[dim.key] as number) + delta)) : "?";
+      lines.push(`| ${dim.label} | ${origVal}/5 | ${deltaStr} | ${estimated}/5 |`);
+    }
+
+    // Evidence strength row (unchanged)
+    const evOrig = orig ? orig.evidenceStrength : "?";
+    lines.push(`| Evidence Strength | ${evOrig}/5 | 0 | ${evOrig}/5 |`);
+    lines.push(`| **Total** | ${orig ? orig.total : "?"}/40 | | **${pivot.estimatedTotal}/40** |`);
+    lines.push("");
+
+    lines.push(`**Estimated Decision:** ${pivot.estimatedDecision}`);
+    lines.push("");
+
+    // Validation tests
+    lines.push("**Validation Tests:**");
+    lines.push("");
+    for (let t = 0; t < pivot.validationTests.length; t++) {
+      const vt = pivot.validationTests[t];
+      lines.push(`${t + 1}. **${vt.test}** — Metric: ${vt.metric} | Pass: ${vt.passThreshold}`);
+    }
+    lines.push("");
+  }
+
+  // Recommendation box
+  const rec = salvage.recommendation;
+  const recPivot = salvage.pivots[rec.pivotIndex];
+  lines.push("### Recommendation");
+  lines.push("");
+  lines.push(`**Best pivot:** ${recPivot?.oneLiner ?? `Pivot ${rec.pivotIndex + 1}`}`);
+  lines.push(`**Rationale:** ${rec.rationale}`);
+  lines.push(`**Immediate next step:** ${rec.immediateNextStep}`);
+  lines.push("");
+  lines.push("*Note: These are estimated scores based on rubric deltas. To fully vet a pivot, run `vet run \"<pivot one-liner>\"`.*");
+  lines.push("");
 
   return lines.join("\n");
 }

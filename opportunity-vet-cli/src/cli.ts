@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import dotenv from "dotenv";
 
-dotenv.config();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const program = new Command();
 
@@ -74,16 +77,16 @@ program
 program
   .command("brainstorm")
   .description("Generate and vet 3 business ideas from a pain point")
-  .requiredOption("--pain <string>", "The pain point to brainstorm solutions for")
+  .argument("<pain>", "The pain point to brainstorm solutions for")
   .option("--niche <string>", "Target niche or industry")
   .option("--customer <string>", "Target customer persona")
   .option("--depth <number>", "Max critique iterations (1 or 2)", "1")
   .option("--save <boolean>", "Save results to files and DB", "true")
   .option("--verbose", "Show intermediate step output", false)
-  .action(async (options) => {
+  .action(async (pain, options) => {
     const { runBrainstorm } = await import("./pipeline/brainstorm.js");
     await runBrainstorm({
-      painPoint: options.pain,
+      painPoint: pain,
       niche: options.niche,
       customer: options.customer,
       depth: parseInt(options.depth, 10),
@@ -110,6 +113,19 @@ program
       console.log(`Run found but no markdown report at: ${run.mdPath}`);
       console.log(`JSON path: ${run.jsonPath}`);
     }
+  });
+
+program
+  .command("convert")
+  .description("Convert existing JSON and Markdown files to text format")
+  .argument("[directory]", "Directory containing files to convert (defaults to output directory)")
+  .action(async (directory: string | undefined) => {
+    const { loadConfig } = await import("./config.js");
+    const { convertJsonAndMdToTxt } = await import("./utils/convert.js");
+    const config = loadConfig();
+    const targetDir = directory || config.outputDir;
+    console.log(`Converting files in: ${targetDir}`);
+    await convertJsonAndMdToTxt(targetDir);
   });
 
 program.parse();
